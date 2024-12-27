@@ -19,7 +19,6 @@ from colossalai.tensor.d_tensor import (
     to_global,
     to_global_for_customized_distributed_tensor,
 )
-from colossalai.utils.safetensors import move_and_save
 
 SAFE_WEIGHTS_NAME = "model.safetensors"
 WEIGHTS_NAME = "pytorch_model.bin"
@@ -273,7 +272,6 @@ def async_save_state_dict_shards(
     base_filename: str,
     is_master: bool,
     pinned_state_dict: Optional[Dict[str, torch.Tensor]],
-    n_write_entries: int,
     use_pp_format: bool = False,
 ) -> Tuple[int, Dict[str, torch.Tensor], list]:
     """
@@ -290,7 +288,7 @@ def async_save_state_dict_shards(
     Returns:
         int: the total size of shards
     """
-    from tensornvme.async_file_io import AsyncFileWriter
+    from colossalai.utils.safetensors import move_and_save
 
     total_size = 0
     shard_filenames = []
@@ -311,9 +309,6 @@ def async_save_state_dict_shards(
             index_file.append_weight_map(key, shard_file)
         checkpoint_file_path = os.path.join(checkpoint, shard_file)
 
-        writer = AsyncFileWriter(checkpoint_file_path, n_write_entries, backend="pthread")
-        writers.append(writer)
-
         if pinned_state_dict is not None:
             sub_pinned_state_dict = {k: pinned_state_dict[k] for k in shard.keys()}
         else:
@@ -321,7 +316,8 @@ def async_save_state_dict_shards(
             returned_state_dict.update(sub_pinned_state_dict)
 
         # Only save on master rank.
-        move_and_save(writer, shard, sub_pinned_state_dict)
+        writer = move_and_save(checkpoint_file_path, shard, sub_pinned_state_dict)
+        writers.append(writer)
         shard_filenames.append(shard_file)
         del shard
 
