@@ -63,6 +63,7 @@ class BloomPolicy(Policy):
         use_zbv = self.pipeline_stage_manager is not None and self.pipeline_stage_manager.use_zbv
 
         if self.shard_config.enable_sequence_parallelism:
+            # Fixed the q_length args when doing the sequence parallelism in bloom model in v4.51.3 transformers.
             self.append_or_create_method_replacement(
                 description={
                     "forward": get_bloom_sequence_parallel_attention_forward(self.shard_config),

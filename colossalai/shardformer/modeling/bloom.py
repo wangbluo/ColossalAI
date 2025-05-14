@@ -117,7 +117,7 @@ class BloomPipelineForwards:
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        cache_position: Optional[torch.LongTensor] = None,
+        cache_position: Optional[torch.LongTensor] = None,  # v4.51.3 transformers
         stage_manager: Optional[PipelineStageManager] = None,
         hidden_states: Optional[torch.FloatTensor] = None,
         stage_index: Optional[List[int]] = None,
@@ -165,6 +165,7 @@ class BloomPipelineForwards:
         # case: First stage of training
         if stage_manager.is_first_stage():
             # check input_ids and inputs_embeds
+            # v4.51.3 transformers
             if (input_ids is None) ^ (inputs_embeds is not None):
                 raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
             if self.gradient_checkpointing and self.training and use_cache:
@@ -201,7 +202,7 @@ class BloomPipelineForwards:
             )
             use_cache = False
 
-        # kept for BC (non `Cache` `past_key_values` inputs)
+        # In v4.51.3 transformers, we need to kept for BC (non `Cache` `past_key_values` inputs)
         return_legacy_cache = False
         if use_cache and not isinstance(past_key_values, Cache):
             return_legacy_cache = True
@@ -216,6 +217,7 @@ class BloomPipelineForwards:
                 )
 
         # Compute alibi tensor: check build_alibi_tensor documentation,build for every stage
+        # v4.51.3 abili calculation.
         past_length = 0
         seq_length_with_past = seq_length + past_length
 
@@ -227,6 +229,7 @@ class BloomPipelineForwards:
         alibi = self.build_alibi_tensor(attention_mask, self.num_heads, dtype=hidden_states.dtype)
 
         # causal_mask is constructed every stage and its input is passed through different stages
+        # v4.51.3 causal_mask calculation, add the cache_position args.
         causal_mask = self._update_causal_mask(
             attention_mask, hidden_states, cache_position, past_key_values, output_attentions
         )
@@ -243,6 +246,7 @@ class BloomPipelineForwards:
                 )
 
         start_idx, end_idx = stage_index[0], stage_index[1]
+        # we don't need the past key values here in v4.51.3.
         for i, block in enumerate(self.h[start_idx:end_idx], start=start_idx):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
@@ -300,6 +304,7 @@ class BloomPipelineForwards:
             next_cache = next_cache.to_legacy_cache()
 
         if stage_manager.is_last_stage():
+            # Return style of the forward method in the v4.51.3 Bloom model.
             if not return_dict:
                 return tuple(
                     v for v in [hidden_states, next_cache, all_hidden_states, all_self_attentions] if v is not None
@@ -726,6 +731,8 @@ class BloomPipelineForwards:
 def get_jit_fused_bloom_attention_forward():
     from transformers.models.bloom.modeling_bloom import BloomAttention
 
+    # The get_jit_fused_bloom_attention_forward function is primarily adapted from
+    # the forward method of BloomAttention in version v4.51.3.
     def forward(
         self: BloomAttention,
         hidden_states: torch.Tensor,
@@ -844,7 +851,7 @@ def get_jit_fused_bloom_gelu_forward():
     return forward
 
 
-# Fixed the q_length args when doing the sequence parallelism in bloom model.
+# Fixed the q_length args when doing the sequence parallelism in bloom model in v4.51.3 transformers.
 def get_bloom_sequence_parallel_attention_forward(shard_config: ShardConfig):
     from transformers.models.bloom.modeling_bloom import BloomAttention
 
@@ -933,6 +940,7 @@ def get_bloom_sequence_parallel_attention_forward(shard_config: ShardConfig):
 def get_bloom_sequence_parallel_forward_fn(shard_config: ShardConfig):
     from transformers import BloomModel
 
+    # Same with the forward method of BloomModel in v4.51.3
     def forward(
         self: BloomModel,
         input_ids: Optional[torch.LongTensor] = None,
